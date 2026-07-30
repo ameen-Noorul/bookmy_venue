@@ -1,25 +1,39 @@
-const express = require("express");
+const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
-const authRoutes = require("./routes/auth");
-const venueRoutes = require("./venues");
-const bookingRoutes = require("./bookings");
-const errorHandler = require("./middleware/errorHandler");
-const { requireLogin } = require("./requireLogin");
+const config = require('./config');
+const errorHandler = require('./middleware/errorHandler');
+
+const authRoutes = require('./routes/auth.routes');
+const venueRoutes = require('./routes/venue.routes');
+const bookingRoutes = require('./routes/booking.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 const app = express();
 
+app.use(helmet());
+app.use(cors({ origin: config.frontendUrl }));
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { status: 'fail', message: 'Too many requests, please try again later' },
+});
+app.use('/auth', authLimiter);
+
 app.use(express.json());
 
-app.use("/auth", authRoutes);
-app.use("/venues", requireLogin, venueRoutes);
-app.use("/bookings", bookingRoutes);
+app.use('/auth', authRoutes);
+app.use('/venues', venueRoutes);
+app.use('/bookings', bookingRoutes);
+app.use('/notifications', notificationRoutes);
 
-app.get("/", (req, res) => {
-  res.json({ message: "BookMyVenue API working" });
+app.get('/', (req, res) => {
+  res.json({ message: 'BookMyVenue API working' });
 });
 
-// Must be registered last — Express only forwards next(err) to
-// middleware defined *after* the route that called it.
 app.use(errorHandler);
 
 module.exports = app;

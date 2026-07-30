@@ -19,7 +19,7 @@ CREATE TABLE "users" (
     "phone" TEXT,
     "avatar_url" TEXT,
     "role" "Role" NOT NULL DEFAULT 'USER',
-    "is_verified" BOOLEAN NOT NULL DEFAULT false,
+    "is_verified" BOOLEAN NOT NULL DEFAULT true,
     "is_banned" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -126,6 +126,9 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "venue_availability_venue_id_blocked_date_key" ON "venue_availability"("venue_id", "blocked_date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "bookings_venue_id_event_date_key" ON "bookings"("venue_id", "event_date");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "payments_booking_id_key" ON "payments"("booking_id");

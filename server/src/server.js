@@ -1,7 +1,7 @@
-const app = require("./app");
+const app = require('./app');
+const config = require('./config');
 
-const PORT = 5000;
-
-app.listen(PORT, () => {
-  console.log("server running on port 5000");
+app.listen(config.port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`server running on port ${config.port}`);
 });

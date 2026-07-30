@@ -121,7 +121,7 @@ model Booking {
   user            User          @relation(fields: [userId], references: [id])
   payment         Payment?
   review          Review?
-
+  @@unique([venueId, eventDate])
   @@map("bookings")
 }
 
