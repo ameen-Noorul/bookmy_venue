@@ -20,7 +20,7 @@ const createBookingSchema = z.object({
       message: 'eventDate must be in the future',
       path: ['eventDate'],
     })
-    .refine((data) => data.eventEndDate > data.eventDate, {
+    .refine((data) => data.eventEndDate >= data.eventDate, {
       message: 'eventEndDate must be on or after eventDate',
       path: ['eventEndDate'],
     }),

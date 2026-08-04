@@ -4,6 +4,8 @@
 // in app.js, because Express only forwards errors to middleware defined AFTER
 // the route/middleware that raised them.
 
+const logger = require('../utils/logger');
+
 const errorHandler = (err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   const status = err.status || 'error';
@@ -15,14 +17,23 @@ const errorHandler = (err, req, res, next) => {
   // leak internal implementation details (file paths, database structure) to
   // whoever is calling the API.
   if (err.isOperational) {
+    // Still worth logging, but at a lower severity ("warn") — this is
+    // expected, handled behavior (a 400/404/403), not a real bug. Keeping
+    // these in the logs (rather than not logging them at all) lets you spot
+    // patterns later — e.g. "this one endpoint gets a LOT of 404s" can be a
+    // useful signal even though none of them are individually a crash.
+    logger.warn({ err, requestId: req.id }, err.message);
     return res.status(statusCode).json({
       status,
       message: err.message,
     });
   }
 
-  // eslint-disable-next-line no-console
-  console.error('UNEXPECTED ERROR:', err);
+  // "error" level (higher severity than "warn") for anything unexpected —
+  // this is what you'd want an alert/monitoring tool watching for in
+  // production, since it means a real bug just happened, not just a normal
+  // rejected request.
+  logger.error({ err, requestId: req.id }, 'Unexpected error');
 
   return res.status(500).json({
     status: 'error',

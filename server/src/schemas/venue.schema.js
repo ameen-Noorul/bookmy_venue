@@ -1,4 +1,4 @@
-const { z } = require('zod');
+const { z } = require("zod");
 
 // Matches the REAL Venue model's required fields. pricePerDay is a Prisma
 // Decimal column — Prisma accepts a plain JS number for Decimal fields on
@@ -38,9 +38,21 @@ const reviewVenueSchema = z.object({
   }),
   body: z
     .object({
-      status: z.enum(['ACTIVE', 'SUSPENDED']),
+      status: z.enum(["ACTIVE", "SUSPENDED"]),
     })
     .strict(),
 });
 
-module.exports = { createVenueSchema, reviewVenueSchema };
+// z.coerce.number() converts the incoming text ("2") into a real number (2)
+// — remember, URL query params always arrive as text, never as numbers.
+const listVenuesSchema = z.object({
+  query: z
+    .object({
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(50).default(10),
+      city: z.string().trim().optional(),
+    })
+    .strict(),
+});
+
+module.exports = { createVenueSchema, reviewVenueSchema, listVenuesSchema };

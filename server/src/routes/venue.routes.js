@@ -3,10 +3,10 @@ const venueController = require('../controllers/venue.controller');
 const validate = require('../middleware/validate');
 const authenticate = require('../middleware/authenticate');
 const { authorizeRoles } = require('../middleware/authorize');
-const { createVenueSchema, reviewVenueSchema } = require('../schemas/venue.schema');
+const { createVenueSchema, reviewVenueSchema, listVenuesSchema } = require('../schemas/venue.schema');
 
 // Public — anyone can browse approved venues, no login required.
-router.get('/', venueController.getApproved);
+router.get('/', validate(listVenuesSchema), venueController.getApproved);
 
 // Any logged-in user can submit a venue — no OWNER role required upfront.
 // A user only BECOMES an OWNER once an ADMIN approves one of their venues

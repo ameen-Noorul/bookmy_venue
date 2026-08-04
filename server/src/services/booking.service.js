@@ -1,12 +1,7 @@
 const prisma = require('../db/prismaClient');
 const AppError = require('../utils/AppError');
 const { notifyOwnerOfBooking } = require('./notification.service');
-
-// Platform takes a flat 10% fee for this MVP. This is a real business
-// decision, not a technical one — hardcoding it here as a named constant
-// makes it one obvious place to change later, instead of a magic number
-// buried in the calculation below.
-const PLATFORM_FEE_PERCENT = 0.10;
+const { calculateBookingAmounts } = require('../utils/pricing');
 
 // Payment is deliberately removed for this MVP pass — see the note in the
 // README. A booking is confirmed the moment it's created, instead of
@@ -26,15 +21,12 @@ async function createBooking(
   // Money is ALWAYS calculated here, server-side, from the venue's real
   // price — never taken from the request body. This is what stops a client
   // from tampering with the price of their own booking.
-  //
-  // +1 because a booking from day 1 to day 1 (same day) is still 1 day, not
-  // 0 — without the +1 a same-day event would incorrectly cost nothing.
-  const days =
-    Math.round((eventEndDate - eventDate) / (1000 * 60 * 60 * 24)) + 1;
   const pricePerDay = Number(venue.pricePerDay); // Prisma Decimal -> plain number for this MVP-level calculation
-  const totalAmount = pricePerDay * days;
-  const platformFee = totalAmount * PLATFORM_FEE_PERCENT;
-  const ownerAmount = totalAmount - platformFee;
+  const { totalAmount, platformFee, ownerAmount } = calculateBookingAmounts(
+    pricePerDay,
+    eventDate,
+    eventEndDate
+  );
 
   // A snapshot of the venue's cancellation policy AT THE MOMENT OF BOOKING.
   // This matters because if the owner changes their policy next month, a
