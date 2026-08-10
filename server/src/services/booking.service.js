@@ -1,21 +1,21 @@
-const prisma = require('../db/prismaClient');
-const AppError = require('../utils/AppError');
-const { notifyOwnerOfBooking } = require('./notification.service');
-const { calculateBookingAmounts } = require('../utils/pricing');
+const prisma = require("../db/prismaClient");
+const AppError = require("../utils/AppError");
+const { notifyOwnerOfBooking } = require("./notification.service");
+const { calculateBookingAmounts } = require("../utils/pricing");
 
 // Payment is deliberately removed for this MVP pass — see the note in the
 // README. A booking is confirmed the moment it's created, instead of
 // starting as PENDING and waiting on a separate payment step.
 async function createBooking(
   { venueId, eventDate, eventEndDate, eventType, guestCount },
-  userId
+  userId,
 ) {
   const venue = await prisma.venue.findUnique({ where: { id: venueId } });
   if (!venue) {
-    throw new AppError('Venue not found', 404);
+    throw new AppError("Venue not found", 404);
   }
-  if (venue.status !== 'ACTIVE') {
-    throw new AppError('This venue is not available for booking', 400);
+  if (venue.status !== "ACTIVE") {
+    throw new AppError("This venue is not available for booking", 400);
   }
 
   // Money is ALWAYS calculated here, server-side, from the venue's real
@@ -25,7 +25,7 @@ async function createBooking(
   const { totalAmount, platformFee, ownerAmount } = calculateBookingAmounts(
     pricePerDay,
     eventDate,
-    eventEndDate
+    eventEndDate,
   );
 
   // A snapshot of the venue's cancellation policy AT THE MOMENT OF BOOKING.
@@ -56,13 +56,20 @@ async function createBooking(
         platformFee,
         ownerAmount,
         policySnapshot,
-        status: 'CONFIRMED',
+        status: "CONFIRMED",
       },
     });
   } catch (err) {
-    if (err.code === 'P2002') {
-      throw new AppError('This venue is already booked for that date', 409);
+    if (err.code === "P2002") {
+      throw new AppError("This venue is already booked for that date", 409);
     }
+    if (err.message && err.message.includes("no_overlapping_bookings")) {
+      throw new AppError(
+        "This venue is already booked for an overlapping date range",
+        409,
+      );
+    }
+
     throw err;
   }
 
@@ -76,7 +83,7 @@ async function createBooking(
 async function cancelBooking(bookingId) {
   return prisma.booking.update({
     where: { id: bookingId },
-    data: { status: 'CANCELLED' },
+    data: { status: "CANCELLED" },
   });
 }
 

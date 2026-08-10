@@ -1,31 +1,75 @@
-// A simple in-memory store: key -> the response we already sent back.
-// HONEST LIMITATION: this only works as long as your server keeps running.
-// If the server restarts, this memory is wiped. A real production setup
-// would store this in Redis or a database table instead, so it survives
-// restarts and works even if you run multiple copies of your server. For
-// today's MVP, in-memory is enough to prove the concept.
-const seenRequests = new Map();
+const redisClient = require('../config/redis');
 
-const idempotency = (req, res, next) => {
+const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
+const PENDING = '__pending__';
+const CACHEABLE_STATUS_CODES = new Set([200, 201, 202, 204, 409]);
+
+const idempotency = async (req, res, next) => {
   const key = req.headers['idempotency-key'];
-
-  // If the client didn't send a key at all, just let the request through
-  // normally — idempotency is opt-in here, not forced.
   if (!key) return next();
 
-  const cached = seenRequests.get(key);
-  if (cached) {
-    // We've seen this exact key before — return the SAME response we sent
-    // the first time, instead of running the booking logic again.
-    return res.status(cached.status).json(cached.body);
+  const redisKey = `idempotency:${key}`;
+
+  let claimed;
+  try {
+    claimed = await redisClient.set(redisKey, PENDING, {
+      NX: true,
+      EX: IDEMPOTENCY_TTL_SECONDS,
+    });
+  } catch (err) {
+    console.error('Idempotency check failed, proceeding without it:', err);
+    return next();
   }
 
-  // Not seen before: let the request run normally, but grab a copy of
-  // whatever response gets sent, so we can remember it for next time.
+  if (!claimed) {
+    let existing;
+    try {
+      existing = await redisClient.get(redisKey);
+    } catch (err) {
+      console.error('Idempotency lookup failed, proceeding without it:', err);
+      return next();
+    }
+
+    if (existing === PENDING) {
+      return res.status(409).json({
+        error: 'A request with this idempotency key is already being processed',
+      });
+    }
+
+    const { status, body } = JSON.parse(existing);
+    return res.status(status).json(body);
+  }
+
+  // res.json() calls res.send() internally in Express — so both overrides
+  // below would otherwise fire for a single response, with the second
+  // (res.send, receiving already-stringified text) silently overwriting
+  // the first (res.json, receiving the real object). This flag makes sure
+  // we only ever save the FIRST body we see per request — whichever
+  // fires first is the real one.
+  let alreadySaved = false;
+  const saveResult = (status, body) => {
+    if (alreadySaved) return;
+    alreadySaved = true;
+
+    if (CACHEABLE_STATUS_CODES.has(status)) {
+      redisClient
+        .set(redisKey, JSON.stringify({ status, body }), { EX: IDEMPOTENCY_TTL_SECONDS })
+        .catch((err) => console.error('Failed to save idempotency result:', err));
+    } else {
+      redisClient.del(redisKey).catch((err) => console.error('Failed to release idempotency key:', err));
+    }
+  };
+
   const originalJson = res.json.bind(res);
   res.json = (body) => {
-    seenRequests.set(key, { status: res.statusCode, body });
+    saveResult(res.statusCode, body);
     return originalJson(body);
+  };
+
+  const originalSend = res.send.bind(res);
+  res.send = (body) => {
+    saveResult(res.statusCode, body);
+    return originalSend(body);
   };
 
   next();

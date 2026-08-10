@@ -11,16 +11,17 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/client": "^5.19.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "pino": "^9.4.0",
-    "pino-http": "^10.3.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "@prisma/client": "^5.19.1",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "redis": "^6.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
