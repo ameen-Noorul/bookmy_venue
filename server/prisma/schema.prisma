@@ -123,6 +123,7 @@ model Booking {
   payment         Payment?
   review          Review?
   @@unique([venueId, eventDate])
+  @@index([userId])
   @@map("bookings")
 }
 

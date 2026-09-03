@@ -1,5 +1,6 @@
 const prisma = require('../db/prismaClient');
 
+
 async function notifyOwnerOfBooking(ownerId, venueName, eventDate) {
   return prisma.notification.create({
     data: {

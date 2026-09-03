@@ -1,7 +1,7 @@
 const prisma = require("../db/prismaClient");
 const AppError = require("../utils/AppError");
-const { notifyOwnerOfBooking } = require("./notification.service");
 const { calculateBookingAmounts } = require("../utils/pricing");
+const { notificationQueue } = require("../queues/notification.queue");
 
 // Payment is deliberately removed for this MVP pass — see the note in the
 // README. A booking is confirmed the moment it's created, instead of
@@ -74,8 +74,15 @@ async function createBooking(
   }
 
   // Since there's no payment step anymore to trigger this, the owner gets
-  // notified right here, right after the booking is confirmed.
-  await notifyOwnerOfBooking(venue.ownerId, venue.name, booking.eventDate);
+  // notified right here, right after the booking is confirmed. This is now
+  // QUEUED instead of called directly — the API responds to the user
+  // immediately, and the actual notification write happens in the
+  // background worker (server/src/workers/notification.worker.js).
+  await notificationQueue.add("notify-owner-booking", {
+    ownerId: venue.ownerId,
+    venueName: venue.name,
+    eventDate: booking.eventDate,
+  });
 
   return booking;
 }
