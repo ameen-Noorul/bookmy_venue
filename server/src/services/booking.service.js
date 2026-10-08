@@ -98,4 +98,16 @@ async function getBookingsByUser(userId) {
   return prisma.booking.findMany({ where: { userId } });
 }
 
-module.exports = { createBooking, cancelBooking, getBookingsByUser };
+// For a venue OWNER: every booking made on a venue they own. Ownership
+// itself is verified upstream by authorizeVenueOwner middleware before this
+// ever runs — this function's only job is the query.
+async function getBookingsByVenue(venueId) {
+  return prisma.booking.findMany({ where: { venueId } });
+}
+
+module.exports = {
+  createBooking,
+  cancelBooking,
+  getBookingsByUser,
+  getBookingsByVenue,
+};

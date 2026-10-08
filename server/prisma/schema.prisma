@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {
@@ -53,6 +54,7 @@ model User {
   bookings    Booking[]
   reviews     Review[]
   notifications Notification[]
+  refreshTokens RefreshToken[]
 
   @@map("users")
 }
@@ -174,4 +176,18 @@ model Notification {
 
   @@index([ownerId])
   @@map("notifications")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  tokenHash   String   @unique   // never store raw token
+  familyId    String              // groups all rotations of one login session
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?           // set when rotated OR reuse-detected
+
+  @@index([userId])
+  @@index([familyId])
 }

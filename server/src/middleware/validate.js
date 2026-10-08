@@ -1,3 +1,4 @@
+const AppError = require("../utils/AppError");
 // A single reusable middleware that validates req.body / req.query / req.params
 // against whatever Zod schema you pass in. This means every route gets
 // validation by adding one line, instead of writing checks by hand each time.
@@ -11,15 +12,13 @@ const validate = (schema) => (req, res, next) => {
 
   if (!result.success) {
     const errors = result.error.issues.map((e) => ({
-      field: e.path.join('.'),
+      field: e.path.join("."),
       message: e.message,
     }));
 
-    return res.status(400).json({
-      status: 'fail',
-      message: 'Validation failed',
-      errors,
-    });
+    return next(
+      new AppError("Validation failed", 400, "VALIDATION_ERROR", errors),
+    );
   }
 
   // IMPORTANT: overwrite the raw request data with the parsed/cleaned version.

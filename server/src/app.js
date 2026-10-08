@@ -1,73 +1,91 @@
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
-const pinoHttp = require('pino-http');
+const express = require("express");
+const helmet = require("helmet");
+const cors = require("cors");
+const rateLimit = require("express-rate-limit");
+const cookieParser = require("cookie-parser");
+const pinoHttp = require("pino-http");
 
-const config = require('./config');
-const logger = require('./utils/logger');
-const errorHandler = require('./middleware/errorHandler');
-
-const authRoutes = require('./routes/auth.routes');
-const venueRoutes = require('./routes/venue.routes');
-const bookingRoutes = require('./routes/booking.routes');
-const notificationRoutes = require('./routes/notification.routes');
+const config = require("./config");
+const logger = require("./utils/logger");
+const AppError = require("./utils/AppError");
+const notFound = require("./middleware/notFound");
+const errorHandler = require("./middleware/errorHandler");
+const v1Routes = require("./routes/v1");
+const {
+  client,
+  httpRequestCounter,
+  httpRequestDuration,
+} = require("./config/metrics");
 
 const app = express();
 
-// --- Request logging (Module 8) ------------------------------------------
-// pino-http auto-logs one line per request/response (method, path, status
-// code, response time, a unique request id). This runs FIRST — before
-// helmet/cors/etc — so every request gets logged even if it gets rejected by
-// something later (e.g. rate limiting), not just successful ones.
+app.set("trust proxy", 1); // one hop: nginx
+
+// --- Request logging: runs FIRST so even rejected requests get logged ------
 app.use(
   pinoHttp({
     logger,
-    // NEVER log passwords or tokens, even by accident. redact replaces these
-    // paths with "[Redacted]" in the log output instead of the real value —
-    // this matters because logs often end up stored/searchable for a long
-    // time, or shipped to a third-party log service, and a leaked password
-    // sitting in a log file is just as bad as one leaked anywhere else.
-    redact: ['req.body.password', 'req.headers.authorization'],
-  })
+    // Never log passwords or tokens, even by accident.
+    redact: ["req.body.password", "req.headers.authorization"],
+  }),
 );
 
-// --- Security hardening (Module 7) --------------------------------------
-// helmet() strips/adjusts several HTTP response headers that would otherwise
-// reveal details about your server (e.g. "X-Powered-By: Express"), making it
-// slightly harder for an attacker to fingerprint your stack.
+// --- Security hardening ------------------------------------------------------
 app.use(helmet());
-
-// CORS controls which frontend origins are allowed to call this API from a
-// browser. Restricting it to your real frontend's URL (instead of allowing
-// everyone, which is the default if you omit `origin`) stops random other
-// websites from silently using a logged-in visitor's session against your API.
 app.use(cors({ origin: config.frontendUrl }));
+app.use(cookieParser());
 
-// Rate limiting caps how many requests one IP can make in a time window.
-// Applied especially to /auth, since login/register are the most common
-// target for brute-force password-guessing attacks.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes, expressed in milliseconds
-  max: 100,
-  message: { status: 'fail', message: 'Too many requests, please try again later' },
+// --- Metrics: runs on every request -------------------------------------------
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    const durationInSeconds = Number(process.hrtime.bigint() - start) / 1e9;
+
+    const labels = {
+      method: req.method,
+      route: req.route?.path || req.path,
+      status_code: res.statusCode,
+    };
+
+    httpRequestCounter.inc(labels);
+    httpRequestDuration.observe(labels, durationInSeconds);
+  });
+
+  next();
 });
-app.use('/auth', authLimiter);
+
+// --- Infrastructure endpoints (unversioned on purpose) -----------------------
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
+// --- Rate limiting on auth routes (brute-force protection) --------------------
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  // Goes through our standard error handler so the shape matches every other error
+  handler: (req, res, next) =>
+    next(new AppError("Too many requests, please try again later", 429, "RATE_LIMITED")),
+});
+app.use("/api/v1/auth", authLimiter);
 
 app.use(express.json());
 
-// --- Routes ---------------------------------------------------------------
-app.use('/auth', authRoutes);
-app.use('/venues', venueRoutes);
-app.use('/bookings', bookingRoutes);
-app.use('/notifications', notificationRoutes);
+// --- Versioned API ------------------------------------------------------------
+app.use("/api/v1", v1Routes);
 
-app.get('/', (req, res) => {
-  res.json({ message: 'BookMyVenue API working' });
+app.get("/", (req, res) => {
+  res.json({ message: "BookMyVenue API working", currentVersion: "v1", base: "/api/v1" });
 });
 
-// Must be registered LAST — Express only forwards next(err) calls to
-// middleware defined *after* the route/middleware that raised them.
+// Must be LAST: notFound first, then the error handler
+app.use(notFound);
 app.use(errorHandler);
 
 module.exports = app;

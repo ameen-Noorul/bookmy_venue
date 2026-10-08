@@ -1,44 +1,58 @@
-// Express treats a middleware function with FOUR parameters (err, req, res, next)
-// specially: it only runs this when something calls next(err) or throws inside
-// an async handler wrapped by catchAsync. This must be the LAST app.use() call
-// in app.js, because Express only forwards errors to middleware defined AFTER
-// the route/middleware that raised them.
+const AppError = require("../utils/AppError");
 
-const logger = require('../utils/logger');
-
-const errorHandler = (err, req, res, next) => {
-  const statusCode = err.statusCode || 500;
-  const status = err.status || 'error';
-
-  // isOperational (set by AppError) means "an expected problem we already
-  // understand" — safe to show the real message to the client.
-  // Anything else is an unexpected bug — we log the full detail for
-  // ourselves, but only send a generic message to the client, so we never
-  // leak internal implementation details (file paths, database structure) to
-  // whoever is calling the API.
-  if (err.isOperational) {
-    // Still worth logging, but at a lower severity ("warn") — this is
-    // expected, handled behavior (a 400/404/403), not a real bug. Keeping
-    // these in the logs (rather than not logging them at all) lets you spot
-    // patterns later — e.g. "this one endpoint gets a LOT of 404s" can be a
-    // useful signal even though none of them are individually a crash.
-    logger.warn({ err, requestId: req.id }, err.message);
-    return res.status(statusCode).json({
-      status,
-      message: err.message,
-    });
+function normalize(err) {
+  if (err instanceof AppError) {
+    return { status: err.statusCode, code: err.code, message: err.message, details: err.details };
   }
 
-  // "error" level (higher severity than "warn") for anything unexpected —
-  // this is what you'd want an alert/monitoring tool watching for in
-  // production, since it means a real bug just happened, not just a normal
-  // rejected request.
-  logger.error({ err, requestId: req.id }, 'Unexpected error');
+  // Zod validation errors
+  if (err.name === "ZodError") {
+    return {
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: "Invalid request data",
+      details: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+    };
+  }
 
-  return res.status(500).json({
-    status: 'error',
-    message: 'Something went wrong',
+  // Prisma known errors
+  if (err.code === "P2002") {
+    return { status: 409, code: "CONFLICT", message: "A record with this value already exists" };
+  }
+  if (err.code === "P2025") {
+    return { status: 404, code: "NOT_FOUND", message: "Record not found" };
+  }
+
+  // JWT errors
+  if (err.name === "TokenExpiredError") {
+    return { status: 401, code: "TOKEN_EXPIRED", message: "Access token expired" };
+  }
+  if (err.name === "JsonWebTokenError") {
+    return { status: 401, code: "INVALID_TOKEN", message: "Invalid token" };
+  }
+
+  // Malformed JSON body (thrown by express.json())
+  if (err.type === "entity.parse.failed") {
+    return { status: 400, code: "INVALID_JSON", message: "Request body is not valid JSON" };
+  }
+
+  // Unknown: never leak internals
+  return { status: 500, code: "INTERNAL_ERROR", message: "Something went wrong" };
+}
+
+module.exports = (err, req, res, next) => {
+  if (res.headersSent) return next(err);
+
+  const { status, code, message, details } = normalize(err);
+
+  const logger = req.log || console;
+  if (status >= 500) {
+    logger.error({ err, requestId: req.id }, "unhandled error");
+  } else {
+    logger.warn({ code, requestId: req.id }, message);
+  }
+
+  res.status(status).json({
+    error: { code, message, ...(details && { details }), requestId: req.id },
   });
 };
-
-module.exports = errorHandler;

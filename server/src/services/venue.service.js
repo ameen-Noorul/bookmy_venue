@@ -14,6 +14,35 @@ async function createVenue(data, submitterId) {
 }
 
 // Public listing — only ever returns ACTIVE (approved) venues.
+// Public: fetch a single venue by id, for a venue detail page.
+async function getVenueById(venueId) {
+  const venue = await prisma.venue.findUnique({ where: { id: venueId } });
+  if (!venue) {
+    throw new AppError("Venue not found", 404);
+  }
+  return venue;
+}
+
+// Owner: update their own venue. Ownership itself was already verified by
+// authorizeVenueOwner middleware before this ever runs — this function's
+// only job is the write. Field whitelisting also already happened twice
+// upstream (Zod's .strict() schema, then controller-level filtering isn't
+// actually needed here since the schema already strips unknown fields —
+// but see note below).
+async function updateVenue(venueId, data) {
+  const venue = await prisma.venue.update({
+    where: { id: venueId },
+    data,
+  });
+  cache.clear(); // a public listing may show stale name/price/photos otherwise
+  return venue;
+}
+
+// Owner: delete their own venue. Ownership already verified upstream.
+async function deleteVenue(venueId) {
+  await prisma.venue.delete({ where: { id: venueId } });
+  cache.clear();
+}
 
 async function getApprovedVenues({ page, limit, city }) {
   const cacheKey = `venues:${page}:${limit}:${city || "all"}`;
@@ -89,4 +118,7 @@ module.exports = {
   getVenuesByOwner,
   getPendingVenues,
   reviewVenue,
+  getVenueById,
+  updateVenue,
+  deleteVenue,
 };

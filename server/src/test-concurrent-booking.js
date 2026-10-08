@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 
 const CONCURRENT_REQUESTS = 5;
-const BASE_URL = "http://localhost:5000";
+const BASE_URL = "http://localhost:3000/api/v1";
 
 const LOGIN_ENDPOINT = `${BASE_URL}/auth/login`;
 const BOOKING_ENDPOINT = `${BASE_URL}/bookings`;
@@ -9,7 +9,7 @@ const BOOKING_ENDPOINT = `${BASE_URL}/bookings`;
 const TEST_EMAIL = "ameen@gmail.com";
 const TEST_PASSWORD = "password123";
 
-const VENUE_ID = "097e931b-7b60-4497-bbca-78a93362b697";
+const VENUE_ID = "fab0e392-ff42-460c-893b-adf26c2f1898";
 
 async function login() {
   const res = await fetch(LOGIN_ENDPOINT, {
@@ -19,7 +19,15 @@ async function login() {
   });
   const body = await res.json();
   if (!res.ok) throw new Error(`Login failed: ${JSON.stringify(body)}`);
-  return body.token || body.accessToken; // adjust if your login response uses a different key
+  const token = body.data?.accessToken;
+
+  if (!token) {
+    throw new Error(
+      `Login response did not contain accessToken: ${JSON.stringify(body)}`,
+    );
+  }
+
+  return token;
 }
 
 async function fireBooking(i, token) {
@@ -32,8 +40,8 @@ async function fireBooking(i, token) {
     },
     body: JSON.stringify({
       venueId: VENUE_ID,
-      eventDate: "2027-04-20",
-      eventEndDate: "2027-04-20",
+      eventDate: "2027-04-23",
+      eventEndDate: "2027-04-23",
       eventType: "Wedding",
       guestCount: 100,
     }),
@@ -41,7 +49,7 @@ async function fireBooking(i, token) {
   const body = await res.json().catch(() => ({}));
   console.log(
     `Request ${i}: status ${res.status} —`,
-    body.message || body.error || body.id || JSON.stringify(body),
+    body.error?.message || body.message || body.data?.id || JSON.stringify(body),
   );
 }
 

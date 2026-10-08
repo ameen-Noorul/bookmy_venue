@@ -1,16 +1,22 @@
-// A normal JavaScript `Error` doesn't carry an HTTP status code, and doesn't
-// tell you whether it was an *expected* problem (bad input, not found, no
-// permission) versus a real bug (a typo, a crashed database connection).
-// AppError adds both of those, so the error handler can treat them differently.
-class AppError extends Error {
-  constructor(message, statusCode) {
-    super(message); // sets this.message, same as a normal Error
-    this.statusCode = statusCode;
-    this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
-    this.isOperational = true; // marks this as an "expected" error, not a crash
+const DEFAULT_CODES = {
+  400: "BAD_REQUEST",
+  401: "UNAUTHORIZED",
+  403: "FORBIDDEN",
+  404: "NOT_FOUND",
+  409: "CONFLICT",
+  422: "UNPROCESSABLE_ENTITY",
+  429: "TOO_MANY_REQUESTS",
+};
 
-    // Keeps the stack trace clean — excludes this constructor itself from it,
-    // so the trace points to where AppError was thrown, not to this file.
+class AppError extends Error {
+  // Same order as the rest of your code: (message, statusCode).
+  // `code` and `details` are optional extras.
+  constructor(message, statusCode = 500, code, details) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code || DEFAULT_CODES[statusCode] || "INTERNAL_ERROR";
+    this.details = details;
+    this.isOperational = true;
     Error.captureStackTrace(this, this.constructor);
   }
 }

@@ -55,4 +55,42 @@ const listVenuesSchema = z.object({
     .strict(),
 });
 
-module.exports = { createVenueSchema, reviewVenueSchema, listVenuesSchema };
+// Used by the OWNER to edit their own venue. All fields optional (partial
+// update), but .strict() means if someone tries to sneak in "status",
+// "approvedBy", "approvedAt", or "ownerId" in the body, Zod itself rejects
+// the whole request with a validation error — it never even reaches the
+// controller. This is defense-in-depth on top of the controller's whitelist.
+const updateVenueSchema = z.object({
+  params: z.object({
+    venueId: z.string().uuid(),
+  }),
+  body: z
+    .object({
+      name: z.string().trim().min(2).max(100).optional(),
+      description: z.string().trim().max(2000).optional(),
+      address: z.string().trim().min(5).max(255).optional(),
+      city: z.string().trim().min(2).max(100).optional(),
+      state: z.string().trim().min(2).max(100).optional(),
+      pincode: z.string().trim().min(3).max(20).optional(),
+      latitude: z.coerce.number().min(-90).max(90).optional(),
+      longitude: z.coerce.number().min(-180).max(180).optional(),
+      capacity: z.coerce.number().int().positive().max(50000).optional(),
+      pricePerDay: z.coerce.number().positive().optional(),
+      amenities: z
+        .array(z.string().trim().toLowerCase().max(50))
+        .max(30)
+        .optional()
+        .transform((arr) => (arr ? [...new Set(arr)] : arr)),
+      photos: z.array(z.string().url()).max(20).optional(),
+      cancellationPolicy: z.record(z.any()).optional(),
+      rules: z.string().trim().max(2000).optional(),
+    })
+    .strict(),
+});
+
+module.exports = {
+  createVenueSchema,
+  reviewVenueSchema,
+  listVenuesSchema,
+  updateVenueSchema,
+};
