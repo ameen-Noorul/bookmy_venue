@@ -3,3 +3,5 @@ server/.env
 server/.env.*
 !server/.env.example
 userlist.txt
+server/debug-admin.js
+server/src/reset-admin-password.js
