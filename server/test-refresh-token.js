@@ -1,7 +1,7 @@
 // Tests refresh token rotation + reuse detection + logout, end-to-end.
 // Run with: node test-refresh-token.js
 
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = 'http://localhost:5000/api/v1';
 
 let passCount = 0;
 let failCount = 0;
@@ -16,18 +16,26 @@ function check(label, condition, extra = '') {
   }
 }
 
+// Returns every Set-Cookie header on the response.
+function getSetCookieHeaders(res) {
+  return res.headers.getSetCookie
+    ? res.headers.getSetCookie()
+    : [res.headers.get('set-cookie')].filter(Boolean);
+}
+
 // Extracts just the "refreshToken=xxx" value from a Set-Cookie header,
 // ignoring the other attributes (HttpOnly, Path, Max-Age, etc).
 function extractCookie(res, cookieName) {
-  const setCookieHeaders = res.headers.getSetCookie
-    ? res.headers.getSetCookie()
-    : [res.headers.get('set-cookie')].filter(Boolean);
-
-  for (const header of setCookieHeaders) {
+  for (const header of getSetCookieHeaders(res)) {
     const match = header.match(new RegExp(`${cookieName}=([^;]+)`));
     if (match) return match[1];
   }
   return null;
+}
+
+// Returns the full raw Set-Cookie header for a cookie (including Path=...).
+function extractRawCookieHeader(res, cookieName) {
+  return getSetCookieHeaders(res).find((h) => h.startsWith(`${cookieName}=`)) || null;
 }
 
 async function request(method, path, { token, body, cookie } = {}) {
@@ -49,8 +57,9 @@ async function request(method, path, { token, body, cookie } = {}) {
   }
 
   const newCookie = extractCookie(res, 'refreshToken');
+  const rawCookieHeader = extractRawCookieHeader(res, 'refreshToken');
 
-  return { status: res.status, data, cookie: newCookie, rawRes: res };
+  return { status: res.status, data, cookie: newCookie, rawCookieHeader, rawRes: res };
 }
 
 async function main() {
@@ -68,6 +77,14 @@ async function main() {
     'Register returns accessToken + sets refreshToken cookie',
     !!accessToken1 && !!refreshCookie1,
     JSON.stringify(registerRes.data)
+  );
+
+  // Step 1b: the cookie's Path must cover the versioned auth routes,
+  // otherwise a real browser would never send it to /api/v1/auth/refresh.
+  check(
+    'Refresh cookie Path is /api/v1/auth (browser will send it to refresh + logout)',
+    !!registerRes.rawCookieHeader && /Path=\/api\/v1\/auth(;|$)/i.test(registerRes.rawCookieHeader),
+    registerRes.rawCookieHeader || 'no Set-Cookie header found'
   );
 
   // Step 2: call /auth/refresh with that cookie — should get a NEW accessToken + NEW cookie

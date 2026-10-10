@@ -1,7 +1,7 @@
 // One-shot script that runs the entire RBAC test plan automatically.
 // Run with: node test-rbac.js
 
-const BASE_URL = "http://localhost:5000";
+const BASE_URL = "http://localhost:5000/api/v1";
 
 let passCount = 0;
 let failCount = 0;
