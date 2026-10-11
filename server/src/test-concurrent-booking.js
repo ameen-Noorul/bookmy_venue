@@ -11,6 +11,12 @@ const TEST_PASSWORD = "password123";
 
 const VENUE_ID = "fab0e392-ff42-460c-893b-adf26c2f1898";
 
+// A fresh random date every run, so old test bookings can't cause a false result.
+const year = 2029 + Math.floor(Math.random() * 20);
+const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, "0");
+const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, "0");
+const EVENT_DATE = `${year}-${month}-${day}`;
+
 async function login() {
   const res = await fetch(LOGIN_ENDPOINT, {
     method: "POST",
@@ -40,20 +46,22 @@ async function fireBooking(i, token) {
     },
     body: JSON.stringify({
       venueId: VENUE_ID,
-      eventDate: "2027-04-23",
-      eventEndDate: "2027-04-23",
+      eventDate: EVENT_DATE,
+      eventEndDate: EVENT_DATE,
       eventType: "Wedding",
       guestCount: 100,
     }),
   });
   const body = await res.json().catch(() => ({}));
   console.log(
-    `Request ${i}: status ${res.status} —`,
+    `Request ${i}: status ${res.status} -`,
     body.error?.message || body.message || body.data?.id || JSON.stringify(body),
   );
+  return res.status;
 }
 
 async function main() {
+  console.log("Test date:", EVENT_DATE);
   console.log("Logging in...");
   const token = await login();
   console.log(
@@ -65,7 +73,17 @@ async function main() {
   const requests = Array.from({ length: CONCURRENT_REQUESTS }, (_, i) =>
     fireBooking(i + 1, token),
   );
-  await Promise.all(requests);
+  const statuses = await Promise.all(requests);
+
+  const created = statuses.filter((s) => s === 201).length;
+  const rejected = statuses.filter((s) => s === 409).length;
+
+  console.log(`\n${created} created, ${rejected} rejected as double-booking`);
+  if (created === 1 && rejected === CONCURRENT_REQUESTS - 1) {
+    console.log("PASS: exactly one booking won, the rest were rejected");
+  } else {
+    console.log("FAIL: expected exactly 1 created and the rest rejected (409)");
+  }
 }
 
 main().catch((err) => console.error("Script failed:", err));
