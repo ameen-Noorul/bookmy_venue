@@ -1,3 +1,4 @@
+const os = require("os");
 const { Server } = require("socket.io");
 const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");
@@ -39,10 +40,10 @@ function initSocket(httpServer, pubClient, subClient) {
     socket.join(room);
     console.log(`[socket] ${socket.id} connected, joined ${room}`);
 
-    // Test helper: lets a client confirm who the server thinks it is.
+    // Test helper: who does the server think I am, and which instance am I on?
     socket.on("whoami", (ack) => {
       if (typeof ack === "function") {
-        ack({ userId: socket.data.userId, role: socket.data.role });
+        ack({ userId: socket.data.userId, role: socket.data.role, instance: os.hostname() });
       }
     });
 
@@ -54,7 +55,7 @@ function initSocket(httpServer, pubClient, subClient) {
   return io;
 }
 
-// Used by later parts to push events to one user.
+// Used by API code to push events to one user.
 function emitToUser(userId, event, payload) {
   if (!io) throw new Error("Socket.IO not initialised");
   io.to(`user:${userId}`).emit(event, payload);

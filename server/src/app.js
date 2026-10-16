@@ -11,6 +11,8 @@ const AppError = require("./utils/AppError");
 const notFound = require("./middleware/notFound");
 const errorHandler = require("./middleware/errorHandler");
 const v1Routes = require("./routes/v1");
+const swaggerUi = require("swagger-ui-express");
+const openapiSpec = require("./docs/openapi");
 const {
   client,
   httpRequestCounter,
@@ -29,6 +31,8 @@ app.use(
     redact: ["req.body.password", "req.headers.authorization"],
   }),
 );
+app.get("/api/docs.json", (req, res) => res.json(openapiSpec));
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 // --- Security hardening ------------------------------------------------------
 app.use(helmet());

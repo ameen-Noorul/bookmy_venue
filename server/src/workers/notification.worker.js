@@ -1,16 +1,18 @@
 /**
- * The WORKER — a separate process that watches the "notification" queue
- * and actually calls your real notifyOwnerOfBooking() function when a
- * job shows up.
+ * Notification worker: separate process that watches the "notification" queue,
+ * saves the notification row, then pushes it live to the owner's socket room.
  *
- * Place this at: server/src/workers/notification.worker.js
- * Run it with:   node src/workers/notification.worker.js
- * (as its own process, alongside your normal API server)
+ * Run with: node src/workers/notification.worker.js
  */
 
 const { Worker } = require('bullmq');
+const IORedis = require('ioredis');
 const { connection } = require('../queues/notification.queue');
 const { notifyOwnerOfBooking } = require('../services/notification.service');
+const { initEmitter, emitToUser } = require('../realtime/emitter');
+
+// Dedicated Redis client for publishing socket events to the API instances.
+initEmitter(new IORedis(process.env.REDIS_URL || 'redis://localhost:6379'));
 
 const notificationWorker = new Worker(
   'notification',
@@ -18,10 +20,15 @@ const notificationWorker = new Worker(
     if (job.name === 'notify-owner-booking') {
       const { ownerId, venueName, eventDate } = job.data;
 
-      // This is your REAL, already-working function — we're not
-      // reimplementing anything, just calling it from a background
-      // process instead of directly inside the booking request.
-      await notifyOwnerOfBooking(ownerId, venueName, new Date(eventDate));
+      // 1. Save the notification row (source of truth).
+      const notification = await notifyOwnerOfBooking(ownerId, venueName, new Date(eventDate));
+
+      // 2. Push it live. A failed push must never fail the job: the row is already saved.
+      try {
+        emitToUser(ownerId, 'notification:new', JSON.parse(JSON.stringify(notification)));
+      } catch (err) {
+        console.warn('[worker] live push failed:', err.message);
+      }
     }
   },
   {
