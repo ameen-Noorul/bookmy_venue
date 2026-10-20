@@ -2,7 +2,7 @@
  * Notification worker: separate process that watches the "notification" queue,
  * saves the notification row, then pushes it live to the owner's socket room.
  *
- * Run with: node src/workers/notification.worker.js
+ * Run from server/:  node src/workers/notification.worker.js
  */
 
 const { Worker } = require('bullmq');
@@ -12,7 +12,9 @@ const { notifyOwnerOfBooking } = require('../services/notification.service');
 const { initEmitter, emitToUser } = require('../realtime/emitter');
 
 // Dedicated Redis client for publishing socket events to the API instances.
-initEmitter(new IORedis(process.env.REDIS_URL || 'redis://localhost:6379'));
+const emitterRedis = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379');
+emitterRedis.on('error', (err) => console.error('[worker] emitter redis error:', err.message));
+initEmitter(emitterRedis);
 
 const notificationWorker = new Worker(
   'notification',
@@ -42,7 +44,28 @@ notificationWorker.on('completed', (job) => {
 });
 
 notificationWorker.on('failed', (job, err) => {
-  console.error(`[worker] Job ${job.id} (${job.name}) failed:`, err.message);
+  console.error(`[worker] Job ${job && job.id} (${job && job.name}) failed:`, err.message);
+});
+
+// Without this listener, a Redis hiccup can crash the whole process.
+notificationWorker.on('error', (err) => {
+  console.error('[worker] worker error:', err.message);
+});
+
+// Last-resort logging so a crash always leaves a reason in the terminal.
+process.on('uncaughtException', (err) => {
+  console.error('[worker] UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[worker] UNHANDLED REJECTION:', reason);
+});
+
+// Clean shutdown on Ctrl+C.
+process.on('SIGINT', async () => {
+  console.log('[worker] shutting down...');
+  await notificationWorker.close();
+  process.exit(0);
 });
 
 console.log('Notification worker started, waiting for jobs...');

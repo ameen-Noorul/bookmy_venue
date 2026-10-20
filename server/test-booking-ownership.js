@@ -1,4 +1,5 @@
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = 'http://localhost:5000/api/v1';
+const crypto = require('crypto');
 
 let passCount = 0;
 let failCount = 0;
@@ -13,8 +14,8 @@ function check(label, condition, extra = '') {
   }
 }
 
-async function request(method, path, { token, body } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+async function request(method, path, { token, body, headers: extra } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...extra };
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -31,6 +32,9 @@ async function request(method, path, { token, body } = {}) {
   return { status: res.status, data };
 }
 
+// A date ~60 days from now, so the test never expires.
+const bookingDate = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+
 async function main() {
   const suffix = Date.now();
   const ownerEmail = `bookowner_${suffix}@test.com`;
@@ -41,7 +45,7 @@ async function main() {
   await request('POST', '/auth/register', { body: { email: ownerEmail, password, name: 'Booking Owner' } });
   let ownerLogin = await request('POST', '/auth/login', { body: { email: ownerEmail, password } });
   let ownerToken = ownerLogin.data?.data?.accessToken;
-  check('Owner registered + logged in', !!ownerToken);
+  check('Owner registered + logged in', !!ownerToken, JSON.stringify(ownerLogin.data));
 
   const createVenueRes = await request('POST', '/venues', {
     token: ownerToken,
@@ -63,7 +67,8 @@ async function main() {
   });
   const tokenAdmin = adminLogin.data?.data?.accessToken;
   if (!tokenAdmin) {
-    console.log('SKIPPING - no admin token.', JSON.stringify(adminLogin.data));
+    console.log('FAIL: no admin token.', JSON.stringify(adminLogin.data));
+    failCount++;
     printSummary();
     return;
   }
@@ -74,6 +79,7 @@ async function main() {
   });
   check('Admin approved venue', reviewRes.status === 200 && reviewRes.data?.data?.status === 'ACTIVE', JSON.stringify(reviewRes.data));
 
+  // Log in again so the token carries the OWNER role granted on approval.
   ownerLogin = await request('POST', '/auth/login', { body: { email: ownerEmail, password } });
   ownerToken = ownerLogin.data?.data?.accessToken;
 
@@ -84,10 +90,11 @@ async function main() {
 
   const createBookingRes = await request('POST', '/bookings', {
     token: customerToken,
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
     body: {
       venueId,
-      eventDate: '2026-12-01',
-      eventEndDate: '2026-12-01',
+      eventDate: bookingDate,
+      eventEndDate: bookingDate,
       eventType: 'Wedding',
       guestCount: 30,
     },
@@ -126,8 +133,10 @@ function printSummary() {
   console.log('----------------------------------------');
   console.log(`${passCount} passed, ${failCount} failed`);
   console.log('----------------------------------------');
+  process.exitCode = failCount ? 1 : 0;
 }
 
 main().catch((err) => {
-  console.error('Script crashed:', err);
+  console.error('FAIL: script crashed:', err);
+  process.exitCode = 1;
 });
