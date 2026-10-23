@@ -36,7 +36,7 @@ app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 // --- Security hardening ------------------------------------------------------
 app.use(helmet());
-app.use(cors({ origin: config.frontendUrl }));
+app.use(cors({ origin: config.frontendUrl, credentials: true }));
 app.use(cookieParser());
 
 // --- Metrics: runs on every request -------------------------------------------
@@ -75,7 +75,13 @@ const authLimiter = rateLimit({
   max: 100,
   // Goes through our standard error handler so the shape matches every other error
   handler: (req, res, next) =>
-    next(new AppError("Too many requests, please try again later", 429, "RATE_LIMITED")),
+    next(
+      new AppError(
+        "Too many requests, please try again later",
+        429,
+        "RATE_LIMITED",
+      ),
+    ),
 });
 app.use("/api/v1/auth", authLimiter);
 
@@ -85,7 +91,11 @@ app.use(express.json());
 app.use("/api/v1", v1Routes);
 
 app.get("/", (req, res) => {
-  res.json({ message: "BookMyVenue API working", currentVersion: "v1", base: "/api/v1" });
+  res.json({
+    message: "BookMyVenue API working",
+    currentVersion: "v1",
+    base: "/api/v1",
+  });
 });
 
 // Must be LAST: notFound first, then the error handler

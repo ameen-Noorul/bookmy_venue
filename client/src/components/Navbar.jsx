@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
+import NotificationBell from '@/components/NotificationBell';
 import { Building2, LayoutDashboard, ShieldCheck, LogOut, CalendarCheck } from 'lucide-react';
 
 const Navbar = () => {
@@ -39,6 +40,7 @@ const Navbar = () => {
 
           {user?.role === 'OWNER' && (
             <>
+              <NotificationBell />
               <Link to="/owner/dashboard">
                 <Button variant="ghost"><LayoutDashboard className="h-4 w-4 mr-2" />Dashboard</Button>
               </Link>

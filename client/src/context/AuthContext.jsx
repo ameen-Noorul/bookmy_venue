@@ -3,6 +3,9 @@ import api from '@/lib/api';
 
 const AuthContext = createContext(null);
 
+// The API returns { accessToken, user } (older versions returned { token, user }).
+const pickToken = (data) => data.accessToken ?? data.token;
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -13,22 +16,22 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  const saveSession = (data) => {
+    const token = pickToken(data);
+    if (token) localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    setUser(data.user);
+    return data.user;
+  };
+
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
-    const { token, user } = res.data.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    setUser(user);
-    return user;
+    return saveSession(res.data.data);
   };
 
   const register = async (email, password, name, role) => {
     const res = await api.post('/auth/register', { email, password, name, role });
-    const { token, user } = res.data.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    setUser(user);
-    return user;
+    return saveSession(res.data.data);
   };
 
   const logout = () => {

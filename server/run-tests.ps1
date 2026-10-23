@@ -9,7 +9,8 @@ $tests = @(
   "test-docs.js",
   "test-realtime.js",
   "test-realtime-emit.js",
-  "test-worker-push.js"
+  "test-worker-push.js",
+  "test-notifications-flow.js"
 )
 
 $results = @()
