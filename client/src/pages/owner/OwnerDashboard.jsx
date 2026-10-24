@@ -12,6 +12,7 @@ const statusColors = {
   DRAFT: 'bg-gray-100 text-gray-600',
   PENDING_REVIEW: 'bg-amber-100 text-amber-700',
   ACTIVE: 'bg-emerald-100 text-emerald-700',
+  REJECTED: 'bg-red-100 text-red-700',
   SUSPENDED: 'bg-red-100 text-red-700',
 };
 
@@ -19,24 +20,24 @@ const OwnerDashboard = () => {
   const [venues, setVenues] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchVenues = async () => {
-    setLoading(true);
-    const res = await api.get('/venues/my');
-    setVenues(res.data.data.venues);
-    setLoading(false);
-  };
+  useEffect(() => {
+    let cancelled = false;
 
-  useEffect(() => { fetchVenues(); }, []);
+    const fetchVenues = async () => {
+      try {
+        const res = await api.get('/venues/mine');
+        const list = res.data.data;
+        if (!cancelled) setVenues(Array.isArray(list) ? list : list?.venues || []);
+      } catch (err) {
+        if (!cancelled) toast.error(err.response?.data?.error?.message || 'Could not load your venues');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
 
-  const handleSubmit = async (id) => {
-    try {
-      await api.patch(`/venues/${id}/submit`);
-      toast.success('Venue submitted for admin review');
-      fetchVenues();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Submit failed');
-    }
-  };
+    fetchVenues();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
@@ -82,17 +83,14 @@ const OwnerDashboard = () => {
               <CardContent className="p-4">
                 <div className="flex justify-between items-start mb-2">
                   <h3 className="font-semibold">{v.name}</h3>
-                  <Badge className={statusColors[v.status]}>{v.status.replace('_', ' ')}</Badge>
+                  <Badge className={statusColors[v.status] || 'bg-gray-100 text-gray-600'}>
+                    {String(v.status).replace('_', ' ')}
+                  </Badge>
                 </div>
                 <p className="text-sm text-gray-500 flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{v.city}</p>
                 <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Users className="h-3.5 w-3.5" />{v.capacity} guests</p>
                 <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><IndianRupee className="h-3.5 w-3.5" />{Number(v.pricePerDay).toLocaleString()}/day</p>
 
-                {v.status === 'DRAFT' && (
-                  <Button size="sm" className="w-full mt-3 bg-rose-600 hover:bg-rose-700" onClick={() => handleSubmit(v.id)}>
-                    Submit for Review
-                  </Button>
-                )}
                 {v.status === 'PENDING_REVIEW' && (
                   <p className="text-xs text-amber-600 mt-3 text-center">Waiting for admin approval</p>
                 )}

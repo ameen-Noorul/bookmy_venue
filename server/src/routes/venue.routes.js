@@ -7,25 +7,29 @@ const {
   createVenueSchema,
   reviewVenueSchema,
   listVenuesSchema,
-  updateVenueSchema, // you'll need to add this to venue.schema.js — see note below
+  updateVenueSchema,
 } = require('../schemas/venue.schema');
 
-// Public — anyone can browse approved venues, no login required.
+// IMPORTANT: fixed paths (/mine, /pending) must be registered BEFORE /:venueId,
+// otherwise Express treats "mine" and "pending" as a venue id.
+
+// Public: anyone can browse approved venues, no login required.
 router.get('/', validate(listVenuesSchema), venueController.getApproved);
-
-// Public — view a single venue's detail page. No auth: same reasoning as
-// the list route above, this is pre-booking browsing.
-router.get('/:venueId', venueController.getById);
-
-// Any logged-in user can submit a venue — no OWNER role required upfront.
-router.post('/', authenticate, validate(createVenueSchema), venueController.create);
 
 // Any logged-in user can check their own submissions.
 router.get('/mine', authenticate, venueController.getMine);
 
-// Owner-only: edit or delete a venue they own. authorizeVenueOwner fetches
-// the venue and confirms req.user.id === venue.ownerId before letting the
-// controller run — a non-owner gets 403 here, before any DB write happens.
+// ADMIN-only: list venues awaiting review.
+router.get('/pending', authenticate, authorizeRoles('ADMIN'), venueController.getPending);
+
+// Public: view a single venue's detail page.
+router.get('/:venueId', venueController.getById);
+
+// Any logged-in user can submit a venue (no OWNER role required upfront).
+router.post('/', authenticate, validate(createVenueSchema), venueController.create);
+
+// Owner-only: edit or delete a venue they own. authorizeVenueOwner confirms
+// req.user.id === venue.ownerId before the controller runs.
 router.patch(
   '/:venueId',
   authenticate,
@@ -41,8 +45,7 @@ router.delete(
   venueController.remove
 );
 
-// ADMIN-only: list venues awaiting review, and approve/reject one.
-router.get('/pending', authenticate, authorizeRoles('ADMIN'), venueController.getPending);
+// ADMIN-only: approve or reject a venue.
 router.patch(
   '/:venueId/review',
   authenticate,
