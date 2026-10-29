@@ -36,6 +36,12 @@ async function login({ email, password }) {
     throw new AppError('Wrong email or password', 400);
   }
 
+  // Checked AFTER the password so we never reveal ban status to someone
+  // who doesn't know the password.
+  if (user.isBanned) {
+    throw new AppError('This account has been suspended', 403);
+  }
+
   const accessToken = signAccessToken(user);
   const { rawToken: refreshToken } = await issueRefreshToken(user.id);
 

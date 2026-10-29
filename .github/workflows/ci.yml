@@ -7,11 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  server:
     runs-on: ubuntu-latest
 
-    # These run as real, temporary containers alongside your test job —
-    # same idea as docker-compose, but GitHub manages them for you.
     services:
       postgres:
         image: postgres:16-alpine
@@ -21,8 +19,6 @@ jobs:
           POSTGRES_DB: bookmyvenue
         ports:
           - 5432:5432
-        # Wait for Postgres to actually be ready, not just started —
-        # the same "container started ≠ database ready" gap we hit before.
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -39,33 +35,71 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    env:
+      PORT: 5000
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookmyvenue
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/bookmyvenue
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: test-secret-for-ci
+      JWT_REFRESH_SECRET: test-refresh-secret-for-ci
+
+    defaults:
+      run:
+        working-directory: ./server
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
 
       - name: Install dependencies
-        working-directory: ./server
         run: npm ci
 
       - name: Generate Prisma client
-        working-directory: ./server
         run: npx prisma generate
 
       - name: Run migrations
-        working-directory: ./server
         run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookmyvenue
 
-      - name: Run tests
-        working-directory: ./server
-        run: npm test
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookmyvenue
-          REDIS_URL: redis://localhost:6379
-          JWT_ACCESS_SECRET: test-secret-for-ci
-          JWT_REFRESH_SECRET: test-refresh-secret-for-ci
-          NODE_ENV: test
+      - name: Ensure test admin
+        run: node scripts/ensure-test-admin.js
+
+      - name: Unit tests
+        run: npx jest tests/pricing.test.js
+
+      - name: Start API and worker
+        run: |
+          nohup node src/server.js > api.log 2>&1 &
+          nohup node src/workers/notification.worker.js > worker.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:5000/health && exit 0
+            sleep 2
+          done
+          echo "API did not become healthy"; cat api.log; exit 1
+
+      - name: Integration tests
+        run: node scripts/run-integration-tests.js
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "--- api.log ---"; tail -n 100 api.log || true
+          echo "--- worker.log ---"; tail -n 100 worker.log || true
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build

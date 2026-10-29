@@ -5,6 +5,7 @@ $tests = @(
   "test-rbac.js",
   "test-refresh-token.js",
   "test-venue-routes.js",
+  "test-admin-routes.js",
   "test-booking.js",
   "test-booking-ownership.js",
   "tests\test-concurrent-booking.js",
@@ -12,7 +13,8 @@ $tests = @(
   "test-realtime.js",
   "test-realtime-emit.js",
   "test-worker-push.js",
-  "test-notifications-flow.js"
+  "test-notifications-flow.js",
+  "test-ban-enforcement.js"
 )
 
 # 1. The API must be up.

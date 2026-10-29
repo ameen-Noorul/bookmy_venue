@@ -2,18 +2,14 @@ const prisma = require("../db/prismaClient");
 const AppError = require("../utils/AppError");
 const cache = require("../utils/cache");
 
-// Any logged-in user can submit a venue — they don't need to be an OWNER
-// yet. For this MVP we skip the DRAFT step and go straight to
-// PENDING_REVIEW (your schema supports a DRAFT stage for later — e.g. an
-// owner saving an unfinished listing before submitting — but that two-step
-// flow isn't built yet; noted as a future addition, not needed for today).
+// Any logged-in user can submit a venue, they don't need to be an OWNER
+// yet. For this MVP we skip the DRAFT step and go straight to PENDING_REVIEW.
 async function createVenue(data, submitterId) {
   return prisma.venue.create({
     data: { ...data, ownerId: submitterId, status: "PENDING_REVIEW" },
   });
 }
 
-// Public listing — only ever returns ACTIVE (approved) venues.
 // Public: fetch a single venue by id, for a venue detail page.
 async function getVenueById(venueId) {
   const venue = await prisma.venue.findUnique({ where: { id: venueId } });
@@ -23,12 +19,9 @@ async function getVenueById(venueId) {
   return venue;
 }
 
-// Owner: update their own venue. Ownership itself was already verified by
-// authorizeVenueOwner middleware before this ever runs — this function's
-// only job is the write. Field whitelisting also already happened twice
-// upstream (Zod's .strict() schema, then controller-level filtering isn't
-// actually needed here since the schema already strips unknown fields —
-// but see note below).
+// Owner: update their own venue. Ownership was already verified by the
+// authorizeVenueOwner middleware, and Zod's .strict() schema already
+// rejected any fields that must not be changed.
 async function updateVenue(venueId, data) {
   const venue = await prisma.venue.update({
     where: { id: venueId },
@@ -44,6 +37,7 @@ async function deleteVenue(venueId) {
   cache.clear();
 }
 
+// Public listing: only ever returns ACTIVE (approved) venues.
 async function getApprovedVenues({ page, limit, city }) {
   const cacheKey = `venues:${page}:${limit}:${city || "all"}`;
   const cached = cache.get(cacheKey);
@@ -71,9 +65,13 @@ async function getVenuesByOwner(ownerId) {
   return prisma.venue.findMany({ where: { ownerId } });
 }
 
-// ADMIN-only: list everything still awaiting a decision.
+// ADMIN-only: list everything still awaiting a decision, with who submitted it.
 async function getPendingVenues() {
-  return prisma.venue.findMany({ where: { status: "PENDING_REVIEW" } });
+  return prisma.venue.findMany({
+    where: { status: "PENDING_REVIEW" },
+    include: { owner: { select: { id: true, name: true, email: true } } },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 // ADMIN-only: approve (ACTIVE) or reject (SUSPENDED) a specific venue.
@@ -83,8 +81,7 @@ async function reviewVenue(venueId, status, adminId) {
     throw new AppError("Venue not found", 404);
   }
 
-  // Rejection only touches the venue — the submitter stays whatever role
-  // they already were.
+  // Rejection only touches the venue; the submitter keeps their role.
   if (status === "SUSPENDED") {
     cache.clear();
     return prisma.venue.update({
@@ -94,10 +91,8 @@ async function reviewVenue(venueId, status, adminId) {
   }
 
   // Approval touches TWO rows together: the venue (status + approvedAt +
-  // approvedBy) and the submitter's role. Same reasoning as before — if the
-  // server crashed between these two writes, you'd end up with a live,
-  // public venue whose "owner" is still stuck as a plain USER, unable to
-  // manage it. $transaction makes that impossible.
+  // approvedBy) and the submitter's role. $transaction makes sure a crash
+  // between the two writes can't leave a live venue with a non-owner.
   const [updatedVenue] = await prisma.$transaction([
     prisma.venue.update({
       where: { id: venueId },

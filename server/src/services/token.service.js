@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const prisma = require('../db/prismaClient'); // matches your actual path from auth.service.js
+const prisma = require('../db/prismaClient');
 const { signAccessToken } = require('../utils/tokens');
 
 const REFRESH_TOKEN_TTL_DAYS = 7;
@@ -41,15 +41,24 @@ async function rotateRefreshToken(rawToken) {
     throw new Error('REFRESH_TOKEN_EXPIRED');
   }
 
+  const user = await prisma.user.findUnique({ where: { id: existing.userId } });
+
+  // Banned or deleted: kill the whole family so no session survives.
+  if (!user || user.isBanned) {
+    await prisma.refreshToken.updateMany({
+      where: { familyId: existing.familyId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    throw new Error('INVALID_REFRESH_TOKEN');
+  }
+
   await prisma.refreshToken.update({
     where: { id: existing.id },
     data: { revokedAt: new Date() }
   });
 
   const { rawToken: newRawToken } = await issueRefreshToken(existing.userId, existing.familyId);
-
-  const user = await prisma.user.findUnique({ where: { id: existing.userId } });
-  const newAccessToken = signAccessToken(user); // reuses the ONE real access-token signer
+  const newAccessToken = signAccessToken(user);
 
   return { accessToken: newAccessToken, refreshToken: newRawToken };
 }
