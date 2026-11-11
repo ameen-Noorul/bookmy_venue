@@ -1,118 +1,155 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
-} from '@/components/ui/dialog';
-import { Calendar, Users, Mail, Phone } from 'lucide-react';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { Button } from '@/components/ui/button';
+import { CalendarDays, Users, MapPin, SearchX, Mail, Phone, Inbox } from 'lucide-react';
 
-const statusColors = {
-  PENDING: 'bg-amber-100 text-amber-700',
-  CONFIRMED: 'bg-emerald-100 text-emerald-700',
-  REJECTED: 'bg-red-100 text-red-700',
-  CANCELLED: 'bg-gray-100 text-gray-600',
-  COMPLETED: 'bg-indigo-100 text-indigo-700',
+// Accept whichever shape the API returns: a bare array or { data: [...] }.
+const extractBookings = (body) => {
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.data)) return body.data;
+  if (Array.isArray(body?.data?.bookings)) return body.data.bookings;
+  if (Array.isArray(body?.bookings)) return body.bookings;
+  return [];
+};
+
+const formatDate = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+const money = (n) => (n == null || n === '' ? '—' : `₹${Number(n).toLocaleString('en-IN')}`);
+
+const STATUS = {
+  PENDING: { label: 'Pending', className: 'bg-amber-100 text-amber-800 hover:bg-amber-100' },
+  CONFIRMED: { label: 'Confirmed', className: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100' },
+  CANCELLED: { label: 'Cancelled', className: 'bg-muted text-muted-foreground hover:bg-muted' },
+  REJECTED: { label: 'Rejected', className: 'bg-red-100 text-red-800 hover:bg-red-100' },
+};
+
+const StatusBadge = ({ status }) => {
+  const s = STATUS[status] ?? {
+    label: String(status ?? 'Unknown').toLowerCase(),
+    className: 'bg-muted text-muted-foreground hover:bg-muted',
+  };
+  return <Badge className={`font-medium capitalize ${s.className}`}>{s.label}</Badge>;
 };
 
 const OwnerBookings = () => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [rejectNote, setRejectNote] = useState('');
-  const [rejectTarget, setRejectTarget] = useState(null);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const fetchBookings = async () => {
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    const res = await api.get('/bookings/owner');
-    setBookings(res.data.data.bookings);
-    setLoading(false);
-  };
+    setError(false);
 
-  useEffect(() => { fetchBookings(); }, []);
+    api
+      .get('/bookings/owner')
+      .then((res) => {
+        if (!cancelled) setBookings(extractBookings(res.data));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(err);
+        setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-  const handleConfirm = async (id) => {
-    try {
-      await api.patch(`/bookings/${id}/confirm`);
-      toast.success('Booking confirmed');
-      fetchBookings();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Confirm failed');
-    }
-  };
-
-  const handleReject = async () => {
-    try {
-      await api.patch(`/bookings/${rejectTarget}/reject`, { ownerNote: rejectNote });
-      toast.success('Booking rejected');
-      setRejectTarget(null);
-      setRejectNote('');
-      fetchBookings();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Reject failed');
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10">
-      <h1 className="text-2xl font-bold mb-6">Booking Requests</h1>
+    <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Booking requests</h1>
+        <p className="mt-1 text-muted-foreground">Bookings made on your venues.</p>
+      </div>
 
       {loading ? (
-        <div className="space-y-4">{[1, 2].map((i) => <Skeleton key={i} className="h-32 w-full rounded-xl" />)}</div>
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-36 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
+          <SearchX className="mb-3 h-10 w-10 text-muted-foreground" />
+          <p className="font-medium">We couldn't load booking requests.</p>
+          <p className="mb-4 text-sm text-muted-foreground">Check your connection and try again.</p>
+          <Button variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
+            Try again
+          </Button>
+        </div>
       ) : bookings.length === 0 ? (
-        <div className="text-center py-20 text-gray-500">No booking requests yet.</div>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
+          <Inbox className="mb-3 h-10 w-10 text-muted-foreground" />
+          <p className="font-medium">No booking requests yet.</p>
+          <p className="text-sm text-muted-foreground">They'll appear here when customers book your venues.</p>
+        </div>
       ) : (
         <div className="space-y-4">
-          {bookings.map((b) => (
-            <Card key={b.id}>
-              <CardContent className="p-5">
-                <div className="flex justify-between items-start gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-semibold text-lg">{b.venue.name}</h3>
-                      <Badge className={statusColors[b.status]}>{b.status}</Badge>
+          {bookings.map((b) => {
+            const venueName = b.venue?.name ?? 'Venue';
+            const customerName = b.user?.name ?? 'Customer';
+            return (
+              <Card key={b.id} className="gap-0 border-0 py-0 shadow-sm ring-1 ring-black/5">
+                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate text-lg font-semibold">{venueName}</h2>
+                      <StatusBadge status={b.status} />
                     </div>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" /> {format(new Date(b.eventDate), 'PPP')} • {b.eventType}
-                    </p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                      <Users className="h-3.5 w-3.5" /> {b.guestCount} guests
-                    </p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Mail className="h-3.5 w-3.5" /> {b.user.email}</p>
-                    {b.user.phone && <p className="text-sm text-gray-500 flex items-center gap-1 mt-1"><Phone className="h-3.5 w-3.5" /> {b.user.phone}</p>}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-lg">₹{Number(b.totalAmount).toLocaleString()}</p>
-                    <p className="text-xs text-gray-400">You earn ₹{Number(b.ownerAmount).toLocaleString()}</p>
-
-                    {b.status === 'PENDING' && (
-                      <div className="flex gap-2 mt-3">
-                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleConfirm(b.id)}>
-                          Confirm
-                        </Button>
-                        <Dialog open={rejectTarget === b.id} onOpenChange={(open) => setRejectTarget(open ? b.id : null)}>
-                          <DialogTrigger asChild>
-                            <Button size="sm" variant="outline" className="text-red-600 border-red-200">Reject</Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader><DialogTitle>Reject booking</DialogTitle></DialogHeader>
-                            <Textarea placeholder="Reason for rejection (optional)" value={rejectNote} onChange={(e) => setRejectNote(e.target.value)} />
-                            <DialogFooter>
-                              <Button variant="destructive" onClick={handleReject}>Confirm Rejection</Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
+                    {b.venue?.city && (
+                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <MapPin className="h-3.5 w-3.5 shrink-0" />
+                        {b.venue.city}
+                      </p>
                     )}
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        {formatDate(b.eventDate)}
+                        {b.eventEndDate && b.eventEndDate !== b.eventDate && ` to ${formatDate(b.eventEndDate)}`}
+                      </span>
+                      {b.guestCount != null && (
+                        <span className="flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5" /> {b.guestCount} guests
+                        </span>
+                      )}
+                      {b.eventType && <span>{b.eventType}</span>}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                  <div className="shrink-0 space-y-1.5 text-left sm:text-right">
+                    <p className="text-sm font-medium">{customerName}</p>
+                    {b.user?.email && (
+                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground sm:justify-end">
+                        <Mail className="h-3.5 w-3.5" /> {b.user.email}
+                      </p>
+                    )}
+                    {b.user?.phone && (
+                      <p className="flex items-center gap-1.5 text-sm text-muted-foreground sm:justify-end">
+                        <Phone className="h-3.5 w-3.5" /> {b.user.phone}
+                      </p>
+                    )}
+                    <p className="pt-1 text-lg font-semibold">{money(b.ownerAmount)}</p>
+                    <p className="text-xs text-muted-foreground">Your share</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

@@ -2,10 +2,13 @@ const router = require("express").Router();
 const bookingController = require("../controllers/booking.controller");
 const validate = require("../middleware/validate");
 const authenticate = require("../middleware/authenticate");
-const { authorizeBookingOwner, authorizeVenueOwner } = require("../middleware/authorize");
+const {
+  authorizeBookingOwner,
+  authorizeVenueOwner,
+} = require("../middleware/authorize");
 const { createBookingSchema } = require("../schemas/booking.schema");
 const idempotency = require("../middleware/idempotency");
-
+const { authorizeRoles } = require("../middleware/authorize");
 router.post(
   "/",
   authenticate,
@@ -13,7 +16,12 @@ router.post(
   validate(createBookingSchema),
   bookingController.create,
 );
-
+router.get(
+  "/owner",
+  authenticate,
+  authorizeRoles("OWNER"),
+  bookingController.getForOwner,
+);
 router.get("/mine", authenticate, bookingController.getMine);
 
 // Venue owner: see every booking made on a venue THEY own. Note this is
@@ -37,11 +45,6 @@ router.get(
   bookingController.getById,
 );
 
-router.delete(
-  "/:bookingId",
-  authenticate,
-  authorizeBookingOwner,
-  bookingController.cancel,
-);
+router.delete("/:bookingId", authenticate, authorizeBookingOwner, bookingController.cancel);
 
 module.exports = router;

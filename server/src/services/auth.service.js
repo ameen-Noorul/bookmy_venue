@@ -4,7 +4,7 @@ const AppError = require('../utils/AppError');
 const { signAccessToken } = require('../utils/tokens');
 const { issueRefreshToken } = require('./token.service');
 
-async function register({ email, password, name }) {
+async function register({ email, password, name, role }) {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     throw new AppError('An account with this email already exists', 409);
@@ -12,8 +12,11 @@ async function register({ email, password, name }) {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  // Sign-up can only create USER or OWNER accounts. ADMIN is never allowed here.
+  const safeRole = role === 'OWNER' ? 'OWNER' : 'USER';
+
   const user = await prisma.user.create({
-    data: { email, password: hashedPassword, name, role: 'USER' },
+    data: { email, password: hashedPassword, name, role: safeRole },
   });
 
   const accessToken = signAccessToken(user);
@@ -36,8 +39,6 @@ async function login({ email, password }) {
     throw new AppError('Wrong email or password', 400);
   }
 
-  // Checked AFTER the password so we never reveal ban status to someone
-  // who doesn't know the password.
   if (user.isBanned) {
     throw new AppError('This account has been suspended', 403);
   }

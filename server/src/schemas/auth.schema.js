@@ -1,4 +1,4 @@
-const { z } = require('zod');
+const { z } = require("zod");
 
 // No `role` field here at all, on purpose. Letting a client pick their own
 // role at signup — even restricted to a couple of options — means anyone
@@ -10,8 +10,9 @@ const registerSchema = z.object({
   body: z
     .object({
       email: z.string().trim().toLowerCase().email(),
-      password: z.string().min(8, 'Password must be at least 8 characters'),
+      password: z.string().min(8, "Password must be at least 8 characters"),
       name: z.string().trim().min(2).max(100),
+      role: z.enum(["USER", "OWNER"]).optional(),
     })
     .strict(),
 });
@@ -20,7 +21,7 @@ const loginSchema = z.object({
   body: z
     .object({
       email: z.string().trim().toLowerCase().email(),
-      password: z.string().min(1, 'Password is required'),
+      password: z.string().min(1, "Password is required"),
     })
     .strict(),
 });

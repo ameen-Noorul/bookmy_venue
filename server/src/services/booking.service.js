@@ -37,13 +37,10 @@ async function createBooking(
 
   let booking;
   try {
-    // NOTE on a real limitation in the current schema: @@unique([venueId,
-    // eventDate]) only blocks an exact match on the START date — it does
-    // NOT check for overlapping ranges (e.g. an existing Jan 1-5 booking
-    // wouldn't block a new Jan 3-7 request, since Jan 3 != Jan 1). Proper
-    // range-overlap blocking needs a different kind of database constraint
-    // (an exclusion constraint, not a simple unique one) — that's a
-    // hardening-pass concern, not something to fix in today's MVP push.
+    // Double-booking is prevented by the database itself: the
+    // no_overlapping_bookings EXCLUDE constraint rejects any CONFIRMED or
+    // PENDING booking whose date range overlaps another on the same venue.
+    // Cancelled bookings are excluded, so they free their dates.
     booking = await prisma.booking.create({
       data: {
         venueId,
@@ -88,6 +85,23 @@ async function createBooking(
 }
 
 async function cancelBooking(bookingId) {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) {
+    throw new AppError("Booking not found", 404);
+  }
+  if (booking.status === "CANCELLED") {
+    throw new AppError("This booking is already cancelled", 400);
+  }
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  if (new Date(booking.eventDate) <= today) {
+    throw new AppError(
+      "This booking has already started and cannot be cancelled",
+      400,
+    );
+  }
+
   return prisma.booking.update({
     where: { id: bookingId },
     data: { status: "CANCELLED" },
@@ -95,9 +109,24 @@ async function cancelBooking(bookingId) {
 }
 
 async function getBookingsByUser(userId) {
-  return prisma.booking.findMany({ where: { userId } });
+  return prisma.booking.findMany({
+    where: { userId },
+    orderBy: { eventDate: "desc" },
+    include: {
+      venue: { select: { id: true, name: true, city: true, state: true } },
+    },
+  });
 }
-
+async function getBookingsForOwner(ownerId) {
+  return prisma.booking.findMany({
+    where: { venue: { ownerId } },
+    orderBy: { eventDate: "asc" },
+    include: {
+      venue: { select: { id: true, name: true, city: true, state: true } },
+      user: { select: { id: true, name: true, email: true, phone: true } },
+    },
+  });
+}
 // For a venue OWNER: every booking made on a venue they own. Ownership
 // itself is verified upstream by authorizeVenueOwner middleware before this
 // ever runs — this function's only job is the query.
@@ -109,5 +138,6 @@ module.exports = {
   createBooking,
   cancelBooking,
   getBookingsByUser,
+  getBookingsForOwner,
   getBookingsByVenue,
 };
